@@ -1,0 +1,120 @@
+
+import networkx as nx
+import matplotlib.pyplot as plt
+from cpn import G
+from demand_real_new import D
+
+
+cpnx = nx.MultiDiGraph(G)
+GG = G
+print (cpnx.nodes())
+print (cpnx.edges())
+
+print("Number of nodes is:", cpnx.number_of_nodes())
+print("Number of edges is:", cpnx.number_of_edges())
+###
+#plt.subplot(121)
+#nx.draw(cpnx, with_labels = True, font_weight = 'bold')
+#plt.subplot(122)
+#nx.draw_shell(cpnx, nlist=[range(5, 10), range(5)], with_labels=True, font_weight='bold')
+###
+
+
+path_f = nx.dijkstra_path(cpnx, "PE90TZL23", "PE90ADN03_9K", weight = "distance")
+path_r = nx.dijkstra_path(cpnx, "PE90ADN03_9K", "PE90TZL23", weight = "distance")
+print(path_f)
+print(path_r)
+print("----------------------------------------------------")
+
+#print(cpnx["PE90TZL23"]["3RD90TZL03"])  #this notation corresponds to the link between node PE90TZL23 and node 3RD90TZL03
+
+
+print("Traffic demand from PE90TZL23 to PE90PSK23 is", D["PE90TZL23"]["PE90ADN23"], "kbps")
+print("Traffic demand from PE90TZL23 to PE90PSK23 is", D["PE90TZL23"]["PE90GZM23"], "kbps")
+
+print("----------------------------------------------------")
+
+
+
+#set all bw paramters to 0, some values are non-zero in the initial data
+for s_node in cpnx.nodes():
+    for n_node in GG[s_node]:
+#        print(GG[s_node][n_node][0]['bw'])
+         GG[s_node][n_node][0]['bw'] = 0   #set GG bw to 0, we will use this parameter to aggregate bw's after demand calc
+#         print(GG[s_node][n_node][0]['bw'])  #check all bw parameters are 0
+
+
+
+#create a demand_d array in the format of "[path_element1, path_element2, ..], bw"
+#the actual bw calc requires another step where bw
+#is added to each link between the nodes listed in path that is executed by networkx
+#
+
+demand_d = []
+for s_pop in D:
+#    print(s_pop)
+    for d_pop in D[s_pop]:
+        path_f = nx.dijkstra_path(cpnx, s_pop, d_pop, weight = 'distance')
+        demand_d.append((path_f, D[s_pop][d_pop]))    #D[s_pop][d_pop] is the bw parameter that is extracted from the demand dictionary.
+                                                      #here we are creating a tuple where first elemet is a list of nodes that constitute the disjkstra path
+                                                      #and the second element in the tuple is the bw that is required to be
+                                                      #reserved along path_f (which is a list of nodes constituting the disjkstra path)
+
+#print(demand_d)
+#print(demand_d[0])      #give the array of nodes that constitute the disjkstra path for element 0.
+#print (demand_d[0][1])  #gives the bw parameter of the first element in demand_d array!
+
+
+#add the bw in demand_d for each link in the path
+#to do that, for any node in the array that constitutes the path,
+#find the
+
+for path_bw in demand_d:
+#    print (path_bw[0])
+    path_bw_len = len((path_bw[0]))
+    for i in range (path_bw_len-1): #walk through the node elements for eahc path in demend_d
+#        print(i)                   #shift through the node list and add the same bw (demand) to each link
+        s_node = path_bw[0][i]
+#        print(s_node)
+        d_node = path_bw[0][i+1]
+#        print(d_node)
+#        print(G[s_node][d_node][0]['bw'])
+        GG[s_node][d_node][0]['bw'] += path_bw[1] #e.g. node1-node2 - add path_bw[1] to the bw parameter in the network model
+                                                  #GG to the link under s_node to its neighboring d_node
+#        print (node, )                           #in the next iteration at the same bw, to the network model bw between node2 and node3.
+
+
+
+#Present the data
+output = []
+
+
+for s_node in cpnx.nodes():
+    for n_node in GG[s_node]:   #n_node neighboring node
+#        print(GG[s_node][n_node][0]['bw'])
+#         print(s_node,";",n_node,";",GG[s_node][n_node][0]['bw'])    #set GG bw to 0, we will use this parameter to aggregate bw's after demand calc
+         s = s_node+";"+n_node+";"+ str(GG[s_node][n_node][0]['bw'])
+         output.append(s)
+#         print(GG[s_node][n_node][0]['bw'])  #check all bw parameters are 0
+#         output[s_node][n_node] = int(GG[s_node][n_node][0]['bw'])
+
+#Now add all individual bw to each topo element "bw" parameter
+
+
+##add a reverse filter to keep the higher link demand
+
+print(output)
+
+import csv
+
+with open("output2.csv", 'a') as outcsv:
+    writer = csv.writer(outcsv)
+    for row in output:
+        writer.writerow([row])
+
+
+"""
+simulate link failure and find the demands - keep only the max demends for each link and when it occures
+First we need to find the list of links
+Put them through a foor loop which removes them from the topology and runs the simulation
+"""

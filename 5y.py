@@ -1,10 +1,10 @@
-
 import networkx as nx
 import matplotlib.pyplot as plt
 import csv
 from cpn import G
-from demand_real_new import D
+from demand_c import D
 
+global cpnx
 cpnx = nx.MultiDiGraph(G)
 GG = G
 # print (cpnx.nodes())
@@ -28,14 +28,29 @@ def set_bw_to_zero():
         for n_node in GG[s_node]:
             GG[s_node][n_node][0]['bw'] = 0   #set GG bw to 0, we will use this parameter to aggregate bw's after demand calc
 
+def create_bw2(GG):
+    for s_node in cpnx.nodes():
+        for n_node in GG[s_node]:
+            GG[s_node][n_node][0]['bw2'] = (0,"") #create a tuple bw2 where bw2[0] is the simulated bw for that link (edge) and
+                                                  #bw2[1] is the edge which was used in the single link failure sim
+    return GG
 
-def set_bw_to_maxsim_bw():
+def set_bw_to_max(GG, edge):
+    for s_node in cpnx.nodes():
+        for n_node in GG[s_node]:
+            if (GG[s_node][n_node][0]['bw'] > GG[s_node][n_node][0]['bw2'][0]):
+                GG[s_node][n_node][0]['bw2'] = (GG[s_node][n_node][0]['bw'], edge )
+            else:
+                continue
+
+
 
 """
 create a demand_d array in the format of "[path_element1, path_element2, ..], bw"
 the actual bw calc requires another step where bw
 is added to each link between the nodes listed in path that is executed by networkx
 """
+
 def calc_spf(D):   #D is the demand matrix
     demand_d = []
     for s_pop in D:
@@ -54,6 +69,8 @@ def calc_bw(demand_d):
             GG[s_node][d_node][0]['bw'] += path_bw[1] #e.g. node1-node2 - add path_bw[1] to the bw parameter in the network model
     return 0                                              #GG to the link under s_node to its neighboring d_node
                                                   #in the next iteration at the same bw, to the network model bw between node2 and node3.
+
+
 """
 Present the data
 """
@@ -65,6 +82,13 @@ def present_output():
             output.append(s)
     return output
 
+def present_output2():
+    output = []
+    for s_node in cpnx.nodes():
+        for n_node in GG[s_node]:   #n_node neighboring node
+            s = s_node+";"+n_node+";"+ str(GG[s_node][n_node][0]['bw2'])
+            output.append(s)
+    return output
 """
 Write to .xls
 """
@@ -99,7 +123,7 @@ def write_to_excel_lff(LL):
 
     book.save("ozguler.xls")
 """
-Program Body
+Program Main Body for bandwidth simulation
 """
 set_bw_to_zero()
 demand_d = calc_spf(D)   #calculate shortest paths
@@ -118,23 +142,27 @@ Put them through a foor loop which removes them from the topology and runs the s
 """
 #nodes = list(G.keys())
 
-set_bw_to_zero()   #open a clean sheet
+#set_bw_to_zero()   #open a clean sheet
+create_bw2(GG)       #create a bw element in GG dict for s_node, n_node
 
 def single_link_loss(cpnx):
-    LL = {}
+#    LL = {}
     i = 0
     for edge in list(cpnx.edges()):
 #    print("removing link", edge[0],edge[1], "and", edge[1], edge[0])
-        if i<=5:
+        if i<=950:
 #            set_bw_to_zero()
+            set_bw_to_zero()
             cpnx.remove_edge(edge[0], edge[1])
             cpnx.remove_edge(edge[1], edge[0])
-
             demand_d = calc_spf(D)                          #create an array of  (path, bw tuple)
             calc_bw(demand_d)                               #creates aggregate bw for each edge
+            set_bw_to_max(GG, str(edge))                    #compare and set the larger value between bw and bw2 to bw2
 
-            output = present_output()
-            LL[edge] = output     #This doesn't work as requires too much memory
+
+#            set_bw_to_maxsim_bw()                           #check and edit bw
+            output = present_output2()
+#            LL[edge] = output     #This doesn't work as requires too much memory
 
     #    write_to_excel_lf(output, edge)
         #add the links back before the next iteration
@@ -143,10 +171,18 @@ def single_link_loss(cpnx):
             cpnx.add_edge(edge[1],edge[0])
             i+=1
 
-    return LL
+#    return LL
 #.xls'e yazarken en ust row'a remove edilen'link'i
 #.en alt satira da
+"""
+Program Main Body for single link failure bandwidth simulation
+"""
+create_bw2(GG)
+single_link_loss(cpnx)
+#print(LL)
+#write_to_excel_lff(LL)
 
-LL = single_link_loss(cpnx)
-print(LL)
-write_to_excel_lff(LL)
+print(cpnx.nodes())
+for s_node in cpnx.nodes():
+    for n_node in GG[s_node]:
+        print(s_node,n_node, GG[s_node][n_node][0]['bw2'])

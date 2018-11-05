@@ -4,29 +4,56 @@ import csv
 from cpn import G
 from demand_c import D
 
+import easygui
+from easygui import *
+
+
 global cpnx
+global sim_type
+sim_type = 0
+
+
 cpnx = nx.MultiDiGraph(G)
 GG = G
-# print (cpnx.nodes())
-# print (cpnx.edges())
-#
-# print("Number of nodes is:", cpnx.number_of_nodes())
-# print("Number of edges is:", cpnx.number_of_edges())
-# path_f = nx.dijkstra_path(cpnx, "PE90TZL23", "PE90ADN03_9K", weight = "distance")
-# path_r = nx.dijkstra_path(cpnx, "PE90ADN03_9K", "PE90TZL23", weight = "distance")
-# print(path_f)
-# print(path_r)
-# print("----------------------------------------------------")
-# print(cpnx["PE90TZL23"]["3RD90TZL03"])  #this notation corresponds to the link between node PE90TZL23 and node 3RD90TZL03
-# print("Traffic demand from PE90TZL23 to PE90PSK23 is", D["PE90TZL23"]["PE90ADN23"], "kbps")
-# print("Traffic demand from PE90TZL23 to PE90PSK23 is", D["PE90TZL23"]["PE90GZM23"], "kbps")
-# print("----------------------------------------------------")
+print("Number of nodes is:", cpnx.number_of_nodes(),"Number of edges is", cpnx.number_of_edges())
 
 #set all bw paramters to 0, some values are non-zero in the initial data
+
+from multiprocessing.dummy import Pool as ThreadPool
+
+def cpnxgui():
+#    from multiprocessing.dummy import Pool as ThreadPool
+
+    global sim_type
+    msg2 = "Choose the type of SIMULATION you want..."
+    title2 = "CPN Traffic Simulator v0.1"
+    choices2 = ["Traffic SIM for a given Network Model and Demand Matrix", "Traffic SIM with Single Link Failure",
+                "Traffic SIM with Single Node Failure", "Traffic SIM with Double Link Failure" ]
+    user_choice = choicebox(msg2, title2, choices2)
+
+    if user_choice == "Traffic SIM for a given Network Model and Demand Matrix":
+        sim_type = 1
+        vanilla_sim(cpnx)
+
+    elif user_choice == "Traffic SIM with Single Link Failure":
+        sim_type = 2
+#        pool = ThreadPool(32)
+#        pool.map(single_link_loss(cpnx))
+        single_link_loss(cpnx)
+
+    elif user_choice == "Traffic SIM with Single Node Failure":
+        sim_type = 3
+
+    elif user_choice == "Traffic SIM with Double Link Failure":
+        sim_type = 4
+
+    return(sim_type)
+
 def set_bw_to_zero():
     for s_node in cpnx.nodes():
         for n_node in GG[s_node]:
             GG[s_node][n_node][0]['bw'] = 0   #set GG bw to 0, we will use this parameter to aggregate bw's after demand calc
+    return GG
 
 def create_bw2(GG):
     for s_node in cpnx.nodes():
@@ -43,14 +70,11 @@ def set_bw_to_max(GG, edge):
             else:
                 continue
 
-
-
 """
 create a demand_d array in the format of "[path_element1, path_element2, ..], bw"
 the actual bw calc requires another step where bw
 is added to each link between the nodes listed in path that is executed by networkx
 """
-
 def calc_spf(D):   #D is the demand matrix
     demand_d = []
     for s_pop in D:
@@ -61,6 +85,7 @@ def calc_spf(D):   #D is the demand matrix
                                                         #and the second element in the tuple is the bw that is required to be
                                                         #reserved along path_f (which is a list of nodes constituting the disjkstra path)
 def calc_bw(demand_d):
+    global cpnx
     for path_bw in demand_d:
         path_bw_len = len((path_bw[0]))
         for i in range (path_bw_len-1): #walk through the node elements for eahc path in demend_d
@@ -70,119 +95,85 @@ def calc_bw(demand_d):
     return 0                                              #GG to the link under s_node to its neighboring d_node
                                                   #in the next iteration at the same bw, to the network model bw between node2 and node3.
 
-
-"""
-Present the data
-"""
 def present_output():
+    global sim_type
     output = []
     for s_node in cpnx.nodes():
         for n_node in GG[s_node]:   #n_node neighboring node
-            s = s_node+";"+n_node+";"+ str(GG[s_node][n_node][0]['bw'])
-            output.append(s)
+            if sim_type == 1:
+                # s = s_node+";"+n_node+";"+ str(GG[s_node][n_node][0]['bw'])
+                s = (s_node+";"+n_node+";", GG[s_node][n_node][0]['bw'])
+                output.append(s)
+            elif sim_type == 2:
+                # s = s_node+";"+n_node+";"+str(GG[s_node][n_node][0]['bw2'][0])+";" + str(GG[s_node][n_node][0]['bw2'][1])
+                s = (s_node+";"+n_node+";", GG[s_node][n_node][0]['bw2'][0], str(GG[s_node][n_node][0]['bw2'][1]))
+                output.append(s)
+
+    output.sort(key = lambda tup:tup[1], reverse=True)
+    print(output)
     return output
 
-def present_output2():
-    output = []
-    for s_node in cpnx.nodes():
-        for n_node in GG[s_node]:   #n_node neighboring node
-            s = s_node+";"+n_node+";"+ str(GG[s_node][n_node][0]['bw2'])
-            output.append(s)
-    return output
-"""
-Write to .xls
-"""
+import datetime
+import os.path
+
 def write_to_excel(output):
-    with open("output2.csv", 'a') as outcsv:
-        writer = csv.writer(outcsv)
-        for row in output:
-            writer.writerow([row])
+    global sim_type
 
-"""
-Write to excel for link failure sims
-What we want to do is write the failed link top most and generate bw at the boom
-"""
-def write_to_excel_lf(output, edge):
-    s = str(edge[0])+"-"+str(edge[1])+".csv"
+    s = str(datetime.date.today())+"_output_sim_type_" + str(sim_type)+".csv"
+
+    if (os.path.isfile(s)):
+        os.remove(s)
+        print("File removed!")
+
     with open(s, 'a') as outcsv:
-        writer = csv.writer(outcsv)
+        writer = csv.writer(outcsv, delimiter=';', quotechar='|')
         for row in output:
             writer.writerow([row])
+    return s
 
+import os
 
-import xlwt
+def vanilla_sim(cpnx):
+    global sim_type
+    set_bw_to_zero()
+    demand_d = calc_spf(D)   #calculate shortest paths
+    calc_bw(demand_d)
+    output = present_output()
+    s= write_to_excel(output)
 
-def write_to_excel_lff(LL):
-    book = xlwt.Workbook(encoding="utf-8")
-    for keyx in LL.keys():
-        sheetx = book.add_sheet(str(keyx))
-        i=0
-        for row in LL[keyx]:
-            sheetx.write(i,0,row)
-            i+=1
+    easygui.msgbox('Simulation Complete!', 'Simulation Complete!')
 
-    book.save("ozguler.xls")
-"""
-Program Main Body for bandwidth simulation
-"""
-set_bw_to_zero()
-demand_d = calc_spf(D)   #calculate shortest paths
-calc_bw(demand_d)
-output = present_output()
-#print(output)
-write_to_excel(output)
+    # print("s is")
+    # os.system("open -a 'Microsoft Excel.app'", s)
 
-print(cpnx.number_of_nodes(), cpnx.number_of_edges())
+    sim_type = cpnxgui()
 
-"""
-Simulate SINGLE LINK FAILURES
-Find the demands under single link failure conditions - keep only the max demands store the info for each link and when it occurs
-First we need to find the list of links
-Put them through a foor loop which removes them from the topology and runs the simulation
-"""
-#nodes = list(G.keys())
-
-#set_bw_to_zero()   #open a clean sheet
-create_bw2(GG)       #create a bw element in GG dict for s_node, n_node
 
 def single_link_loss(cpnx):
-#    LL = {}
+    global sim_type
+    create_bw2(GG)
     i = 0
+    easygui.msgbox('Simulation Started', 'Simulation Started')
     for edge in list(cpnx.edges()):
-#    print("removing link", edge[0],edge[1], "and", edge[1], edge[0])
-        if i<=950:
-#            set_bw_to_zero()
+
+        if i< cpnx.number_of_edges():   #Chance this parameter to a small number if you would like a quick run for testing
             set_bw_to_zero()
             cpnx.remove_edge(edge[0], edge[1])
             cpnx.remove_edge(edge[1], edge[0])
+
             demand_d = calc_spf(D)                          #create an array of  (path, bw tuple)
             calc_bw(demand_d)                               #creates aggregate bw for each edge
             set_bw_to_max(GG, str(edge))                    #compare and set the larger value between bw and bw2 to bw2
 
-
-#            set_bw_to_maxsim_bw()                           #check and edit bw
-            output = present_output2()
-#            LL[edge] = output     #This doesn't work as requires too much memory
-
-    #    write_to_excel_lf(output, edge)
-        #add the links back before the next iteration
-    #    print("adding link", edge[0],edge[1], "and", edge[1], edge[0])
             cpnx.add_edge(edge[0],edge[1])
             cpnx.add_edge(edge[1],edge[0])
             i+=1
 
-#    return LL
-#.xls'e yazarken en ust row'a remove edilen'link'i
-#.en alt satira da
-"""
-Program Main Body for single link failure bandwidth simulation
-"""
-create_bw2(GG)
-single_link_loss(cpnx)
-#print(LL)
-#write_to_excel_lff(LL)
+    output = present_output()
+    write_to_excel(output)
+    easygui.msgbox('Simulation Complete!', 'Simulation Complete!')
+    sim_type = cpnxgui()
+#    sim_type = cpnxgui()
 
-print(cpnx.nodes())
-for s_node in cpnx.nodes():
-    for n_node in GG[s_node]:
-        print(s_node,n_node, GG[s_node][n_node][0]['bw2'])
+
+sim_type = cpnxgui()                #start with simgui
